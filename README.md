@@ -140,6 +140,19 @@ pnpm build
 
 ---
 
+## 🔮 演进路线：下一代自适应动态剪枝调节器（Adaptive Pruning Controller）
+
+- **理论动机（Operating System Virtual Memory Analogy）**：
+  在操作系统虚拟内存体系中，若系统将页面置换至磁盘后，CPU 紧接着又产生缺页中断将其换回内存，即代表当前的淘汰策略（LRU/LFU）把活跃工作集（Working Set）误判为了冷数据，产生了系统颠簸（Thrashing）。  
+  在 Agent 长程任务中，若模型在剪枝后不得不重新读取（`read` / `grep` / `search_context`）刚被折叠的信息，「回翻资料」这一动作本身就是最权威的**剪枝负反馈信号**。
+
+- **核心规划能力**：
+  1. **Working Set 粘滞保护（Stickiness）**：追踪当前步骤连续编辑/调测的文件集合，标记为 HOT 工作集，在单轮压缩中免疫激进折叠；
+  2. **回翻率闭环校准（Fault-Rate Feedback）**：捕获重复读取行为，自适应上调后续剪枝摘要的保真度与结构深度；
+  3. **可重入执行指针（Executable Ref-Anchors）**：针对关键代码块，自动生成 `[可重入执行指针: read(path, offset, limit)]`，无需长文本模糊复述，实现精准零成本再激活。
+
+---
+
 ## 📜 许可证
 
 [MIT License](LICENSE) © 2026 博士（huangfei）& 克莱茵（Klein）
