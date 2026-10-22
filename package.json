@@ -1,0 +1,69 @@
+{
+  "name": "klein-context-pruner",
+  "version": "0.1.0",
+  "description": "High-performance Active Context Pruning (ACP) for DeepSeek Harness — intelligent tiered compression, prefix cache affinity, and memory lifecycle management.",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "acp",
+    "context-pruner",
+    "context-compression",
+    "prefix-cache",
+    "compaction"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare": "node scripts/patch-kernel.mjs",
+    "prebuild": "node scripts/patch-kernel.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "tsup",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-compaction": ">=0.1.5-alpha.1 <0.1.6-0",
+    "@deepseek-ai/dsh-session": ">=0.1.5-alpha.1 <0.1.6-0",
+    "@deepseek-ai/dsh-llm": ">=0.1.5-alpha.1 <0.1.6-0",
+    "@deepseek-ai/dsh-tools": ">=0.1.5-alpha.1 <0.1.6-0",
+    "@deepseek-ai/dsh-settings": ">=0.1.5-alpha.1 <0.1.6-0",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "acp-kernel": "0.0.63",
+    "@types/node": "^22.13.0",
+    "tsup": "^8.3.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

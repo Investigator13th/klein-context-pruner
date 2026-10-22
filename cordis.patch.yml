@@ -1,0 +1,7 @@
+# dsh bundle patch for klein-context-pruner
+- id: compaction-basic
+  disabled: true
+
+- insert:
+    - id: compaction-acp
+      name: 'klein-context-pruner'
