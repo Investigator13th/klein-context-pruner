@@ -996,7 +996,7 @@ export class AcpCompactionEngine extends CompactionEngine {
     signal?.throwIfAborted()
     throw new ManualCompactionError(
       'summary',
-      'billion-context-dsh is model-driven: use the compress tool instead of automatic summarization',
+      'klein-context-pruner is model-driven: use the compress tool instead of automatic summarization',
     )
   }
 }
