@@ -238,7 +238,16 @@ export function projectEvent(event: SessionEvent, toolNames?: ReadonlyMap<string
       // framing already covers new blocks; this catches legacy blocks whose nodes
       // were written before the feature existed).
       const text = isCheckpointNode(event) ? withSummaryFramePrefix(raw) : raw
-      return text.length > 0 ? [{ id: String(event.seq), role: 'user', contentType: 'text', text }] : []
+      if (text.length === 0) return []
+
+      // Decouple real human user prompts from synthetic/injected user messages.
+      // Real human user turns stay role: 'user' so acp-kernel segments them and
+      // Patch A2 guarantees they never enter compressible ranges (prevents deadlock).
+      // Synthetic injections (generic memory recalls, snapshots, notices) become
+      // role: 'system' so acp-kernel allows them into compressible ranges to be folded.
+      const isHuman = isRealUserTurn(event)
+      const role = isHuman ? 'user' : 'system'
+      return [{ id: String(event.seq), role, contentType: 'text', text }]
     }
     case 'assistant/message': {
       const content = (event.data as { message?: { content?: unknown } }).message?.content
@@ -489,6 +498,8 @@ const REAL_CONTENT_PLUGINS: ReadonlySet<string> = new Set([
   '@deepseek-ai/dsh-system-prompt',
   'user-approval',
   'tools-ptc',
+  'time-context',
+  'repeat-tool-reminder',
 ])
 
 /**
@@ -572,7 +583,7 @@ export function classifySurfaceEvent(event: SessionEvent): SurfaceEventClass {
   if (event.type !== 'user/message') return 'real'
   const data = event.data as any
   const source = (data as { source?: { kind?: string; plugin?: string } })?.source
-  const content = typeof data?.content === 'string' ? data.content : typeof data?.text === 'string' ? data.text : undefined
+  const content = extractText(data?.content ?? data?.text)
 
   // Generic memory recall check: OpenViking, Mem0, Hindsight, or any memory-tagged
   // recall injection is genuine content that should be folded/evaporated into URIs
@@ -627,7 +638,7 @@ export function isRealUserTurn(event: SessionEvent): boolean {
   if (classifySurfaceEvent(event) !== 'real') return false
   const data = event.data as any
   const source = (data as { source?: { kind?: string; plugin?: string } })?.source
-  const content = typeof data?.content === 'string' ? data.content : typeof data?.text === 'string' ? data.text : undefined
+  const content = extractText(data?.content ?? data?.text)
 
   // Memory recalls are foldable content, but they are NOT the user speaking:
   // they must never steal protection away from the real human user turn.

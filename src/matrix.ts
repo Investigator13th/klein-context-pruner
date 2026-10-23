@@ -20,29 +20,35 @@ export interface MemoryRecallSnippet {
  * plugin name, or standard semantic memory framing tags.
  */
 export function isGenericMemoryRecall(eventOrSource: string | {
-  source?: { kind?: string }
+  source?: { kind?: string; plugin?: string }
   content?: unknown
 }): boolean {
   if (typeof eventOrSource === 'string') {
     const text = eventOrSource
     return (
-      text.includes('<openviking-context>') ||
-      text.includes('<memory-context>') ||
+      text.includes('<openviking-context') ||
+      text.includes('<memory-context') ||
       text.includes('<memory uri=') ||
-      text.includes('<recalled-memories>') ||
+      text.includes('<recalled-memories') ||
       text.includes('viking://') ||
       text.includes('memory://')
     )
   }
 
-  const kind = eventOrSource.source?.kind ?? ''
+  const source = eventOrSource.source as { kind?: string; plugin?: string } | undefined
+  const kind = source?.kind ?? ''
+  const plugin = source?.plugin ?? ''
   if (
     kind.includes('memory') ||
     kind.includes('recall') ||
     kind.includes('viking') ||
     kind.includes('hindsight') ||
     kind.includes('mem0') ||
-    kind.includes('zep')
+    kind.includes('zep') ||
+    plugin.includes('memory') ||
+    plugin.includes('viking') ||
+    plugin.includes('hindsight') ||
+    plugin.includes('mem0')
   ) {
     return true
   }
@@ -53,10 +59,12 @@ export function isGenericMemoryRecall(eventOrSource: string | {
     : JSON.stringify(eventOrSource.content ?? '')
 
   return (
-    text.includes('<openviking-context>') ||
-    text.includes('<memory-context>') ||
+    text.includes('<openviking-context') ||
+    text.includes('<memory-context') ||
     text.includes('<memory uri=') ||
-    text.includes('<recalled-memories>')
+    text.includes('<recalled-memories') ||
+    text.includes('viking://') ||
+    text.includes('memory://')
   )
 }
 
