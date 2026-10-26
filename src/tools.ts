@@ -18,6 +18,7 @@ import type { AcpStateStore } from './state.ts'
 import { kernelConfigFor, type KernelConfigInput } from './config.ts'
 import { resolveTokenCount } from './nudge.ts'
 import { routeFor, type AcpWindow } from './window.ts'
+import { appendChronicleEntry } from './chronicle.ts'
 import {
   AlreadyCompressedRangeError,
   blockIdOfKernelRef,
@@ -38,7 +39,7 @@ import {
   DEFAULT_DECOMPRESS_PAGE_CHARS,
   type ResolvedSurfaceRange,
 } from './region.ts'
-import { allLogMessages, attachmentsOfEvent, buildToolCallIndex, eventsToCoreMessages, extractEventText, isCheckpointNode, surfaceEventsOf, toolCallsOf } from './messages.ts'
+import { allLogMessages, attachmentsOfEvent, buildToolCallIndex, eventsToCoreMessages, extractEventText, isCheckpointNode, isRealUserTurn, surfaceEventsOf, toolCallsOf } from './messages.ts'
 import { shadowedTokensViaMeter } from './host-tokens.ts'
 import { eventAtOf, sessionEventsOf } from './session-events.ts'
 import { DEFAULT_RESOLVED, type ResolvedPrompts } from './prompts.ts'
@@ -353,7 +354,13 @@ export function guardedRowsInSpan(guarded: ReadonlySet<number>, shadowed: readon
   return [...guarded].filter((seq) => inSpan.has(seq)).sort((a, b) => a - b)
 }
 
-export function protectedRowRejectionNote(start: number, end: number, hits: readonly number[], shadowed: readonly number[]): string {
+export function protectedRowRejectionNote(
+  start: number,
+  end: number,
+  hits: readonly number[],
+  shadowed: readonly number[],
+  session?: Session,
+): string {
   const preview = hits.slice(0, 4).join(', ')
   const more = hits.length > 4 ? ` +${hits.length - 4} more` : ''
   const first = shadowed.indexOf(hits[0]!)
@@ -364,9 +371,31 @@ export function protectedRowRejectionNote(start: number, end: number, hits: read
     .filter((slice) => slice.length > 0)
     .map((slice) => `${slice[0]}..${slice[slice.length - 1]}`)
   const recovery = slices.length === 0
-    ? 'no part of this span is compressible while those rows are current — pick an OLDER span instead (acp_status lists the live ranges)'
+    ? 'no part of this span is compressible while those rows are protected — pick an OLDER span instead (acp_status lists the live ranges)'
     : `the compressible part of this span is seq ${slices.join(' and ')} — submit them as separate content entries (or two compress calls), each with its own summary`
-  return `  seqs ${start}..${end} rejected — the span covers ${hits.length} CURRENT injected instruction row(s) (seq ${preview}${more}); the host re-injects the newest AGENTS.md copy the moment it leaves the surface, so compressing it reclaims nothing — ${recovery} (older/stale copies of the same file are fine to compress)`
+
+  let hasUserHits = false
+  let hasInstructionHits = false
+  if (session !== undefined) {
+    for (const seq of hits) {
+      const event = eventAtOf(session, seq)
+      if (event !== undefined && isRealUserTurn(event)) {
+        hasUserHits = true
+      } else {
+        hasInstructionHits = true
+      }
+    }
+  } else {
+    hasInstructionHits = true
+  }
+
+  const reasonDesc = hasUserHits && hasInstructionHits
+    ? 'protected recent user messages and current instruction rows'
+    : hasUserHits
+      ? 'protected recent user message(s); recent user messages are protected from compression to preserve user intent'
+      : 'CURRENT injected instruction row(s); the host re-injects the newest AGENTS.md copy the moment it leaves the surface, so compressing it reclaims nothing'
+
+  return `  seqs ${start}..${end} rejected — the span covers ${hits.length} ${reasonDesc} (seq ${preview}${more}) — ${recovery}`
 }
 
 /**
@@ -513,7 +542,7 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
   // events, and every accepted range lands in ONE applyCompression call at the
   // end of the loop — so the set cannot go stale mid-batch.
   const rejectedNotes: string[] = []
-  const guardedSeqs = guardedSurfaceSeqsOf(session)
+  const guardedSeqs = guardedSurfaceSeqsOf(session, env.preserveUserTurns ?? 3)
   for (const range of args.content!) {
     const startSeq = parseBoundary(range.startSeq, byRef)
     const endSeq = parseBoundary(range.endSeq, byRef)
@@ -554,7 +583,7 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
     const shadowedSpan = shadowedSeqsOf(session, resolved.start, resolved.end)
     const instructionHits = guardedRowsInSpan(guardedSeqs, shadowedSpan)
     if (instructionHits.length > 0) {
-      rejectedNotes.push(protectedRowRejectionNote(resolved.start, resolved.end, instructionHits, shadowedSpan))
+      rejectedNotes.push(protectedRowRejectionNote(resolved.start, resolved.end, instructionHits, shadowedSpan, session))
       continue
     }
     // An edge on an ACTIVE block's checkpoint summary node resolves to the
@@ -713,6 +742,15 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
     lines.push(
       `  block ${compactionId.slice(0, 8)}: seqs ${start}..${end}, ${shadowed.length} messages shadowed${tierLabel}${readingsLabel}${note}`,
     )
+    // 流式同步写入冷区 Daily Chronicle，复用主模型已生成的压缩摘要
+    appendChronicleEntry({
+      topic: range.topic,
+      summary: range.summary,
+      startSeq: start,
+      endSeq: end,
+      blockId: compactionId,
+      verifiedReadings: range.verifiedReadings,
+    })
   }
 
   const summaryLine = `Compressed ${applied.result.blocksCreated} block(s), ~${applied.result.tokensCompressed} tokens reclaimed.`
