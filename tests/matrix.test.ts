@@ -46,6 +46,15 @@ test('Generic Memory Recall Matcher identifies various memory providers', () => 
     'should match XML openviking-context',
   )
 
+  // 4.1 klein-memory XML tagged content
+  assert.equal(
+    isGenericMemoryRecall({
+      content: '<klein-memory-context query="架构"><memory-block id="viking://user/profile.md">profile</memory-block></klein-memory-context>',
+    }),
+    true,
+    'should match XML klein-memory-context',
+  )
+
   // 5. Plain user message (must NOT match)
   assert.equal(
     isGenericMemoryRecall({
@@ -108,3 +117,41 @@ test('9-part Information Distillation Matrix contains all required cognitive dim
   assert.ok(INFORMATION_DISTILLATION_MATRIX.includes('8. 【未决待办与阻碍 (Open TODOs & Blockers)】'), 'contains dimension 8')
   assert.ok(INFORMATION_DISTILLATION_MATRIX.includes('9. 【子 Agent 与后台任务 (Subagents & Jobs)】'), 'contains dimension 9')
 })
+
+test('evaporateMemoryToUris drops unconsumed memory noise completely (0 chars) during footprint audit', () => {
+  const noiseBlock = `
+<klein-memory-context query="做饭 菜单">
+  <memory-block id="viking://user/huangfei/memories/preferences/食谱/辣子鸡.md" score="0.88">
+    做辣子鸡需要准备干辣椒、鸡腿肉、花椒、生姜和大蒜。
+  </memory-block>
+</klein-memory-context>
+`
+  // 上下文区间实际在讨论代码重构与 Git 提交，完全没有提及辣子鸡或做饭
+  const contextWindowText = '用户问：帮我看一下这个 Git 提交和 TypeScript 编译报错。助手回复：报错原因在于类型未定义。'
+
+  const result = evaporateMemoryToUris(noiseBlock, contextWindowText)
+  assert.equal(result, '', 'Unconsumed memory recall must be completely dropped to 0 characters')
+})
+
+test('evaporateMemoryToUris keeps consumed memories and handles deduplication', () => {
+  const memoryBlock = `
+<klein-memory-context query="作息 与 宿主">
+  <memory-block id="viking://user/huangfei/memories/preferences/作息偏好.md" score="0.92">
+    博士习惯晚睡早起。
+  </memory-block>
+  <memory-block id="viking://user/huangfei/memories/entities/deepseek_harness.md" score="0.85">
+    DSH 是核心宿主系统。
+  </memory-block>
+</klein-memory-context>
+`
+  // 上下文中助手回答了关于作息的建议，但没有提到 deepseek_harness
+  const contextWindowText = '助手回复：根据您的作息偏好，建议今晚在 0 点前入睡。'
+
+  const result = evaporateMemoryToUris(memoryBlock, contextWindowText)
+  // 仅保留作息偏好.md，deepseek_harness.md 因为未消费被剔除
+  assert.ok(result.includes('作息偏好.md'), 'Consumed memory must be preserved')
+  assert.ok(!result.includes('deepseek_harness.md'), 'Unconsumed memory must be evicted')
+  assert.ok(!result.includes('博士习惯晚睡早起'), 'Verbose body must be stripped')
+  assert.equal(result, '[Memory Reference: viking://user/huangfei/memories/preferences/作息偏好.md]')
+})
+

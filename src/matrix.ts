@@ -27,8 +27,10 @@ export function isGenericMemoryRecall(eventOrSource: string | {
     const text = eventOrSource
     return (
       text.includes('<openviking-context') ||
+      text.includes('<klein-memory-context') ||
       text.includes('<memory-context') ||
       text.includes('<memory uri=') ||
+      text.includes('<memory-block') ||
       text.includes('<recalled-memories') ||
       text.includes('viking://') ||
       text.includes('memory://')
@@ -60,8 +62,10 @@ export function isGenericMemoryRecall(eventOrSource: string | {
 
   return (
     text.includes('<openviking-context') ||
+    text.includes('<klein-memory-context') ||
     text.includes('<memory-context') ||
     text.includes('<memory uri=') ||
+    text.includes('<memory-block') ||
     text.includes('<recalled-memories') ||
     text.includes('viking://') ||
     text.includes('memory://')
@@ -69,39 +73,92 @@ export function isGenericMemoryRecall(eventOrSource: string | {
 }
 
 /**
- * Evaporate verbose memory bodies into compact URI pointers.
- * Reduces 500-2000 token memory blocks to ~30-50 tokens while retaining lookup keys.
+ * Evaporate verbose memory bodies into compact URI pointers with Footprint Audit.
+ * - When contextWindowText is provided: drops unconsumed memory noise (0 chars output).
+ * - When consumed: condenses multi-KB memory bodies into compact [Memory Reference(s)] pointers.
  */
-export function evaporateMemoryToUris(rawText: string): string {
+export function evaporateMemoryToUris(rawText: string, contextWindowText?: string): string {
   if (!isGenericMemoryRecall(rawText)) {
     return rawText
   }
 
-  // If there's an outer container like <openviking-context>...</openviking-context>
-  const containerRegex = /<(?:openviking-context|[a-z0-9_-]+-context)[\s\S]*?<\/(?:openviking-context|[a-z0-9_-]+-context)>/gi
+  const isConsumed = (identifier: string): boolean => {
+    if (!contextWindowText) return true // 若未提供上下文审查文本，默认保留
+    const trimmed = identifier.trim()
+    if (!trimmed) return false
+    if (contextWindowText.includes(trimmed)) return true
+
+    const fileName = trimmed.split('/').pop()?.trim()
+    if (fileName && fileName.length > 2 && contextWindowText.includes(fileName)) {
+      return true
+    }
+    const baseName = fileName ? fileName.replace(/\.[a-z0-9]+$/i, '') : ''
+    if (baseName && baseName.length > 2 && contextWindowText.includes(baseName)) {
+      return true
+    }
+    return false
+  }
+
+  // 1. 处理大容器标签，如 <klein-memory-context> 或 <openviking-context>
+  const containerRegex = /<(?:[a-z0-9_-]+-context)[\s\S]*?<\/(?:[a-z0-9_-]+-context)>/gi
   if (containerRegex.test(rawText)) {
-    return rawText.replace(containerRegex, (block) => {
-      const uris = Array.from(block.matchAll(/uri=["']([^"']+)["']/g)).map(m => m[1])
-      const unique = Array.from(new Set(uris))
-      return `[Memory References (${unique.length}): ${unique.join(', ')}]`
+    const replaced = rawText.replace(containerRegex, (block) => {
+      const matches = Array.from(block.matchAll(/(?:uri|id)=["']([^"']+)["']/g)).map(m => m[1])
+      const unique = Array.from(new Set(matches)).filter(
+        id => id.includes('://') || id.endsWith('.md')
+      )
+      const consumed = unique.filter(isConsumed)
+      if (consumed.length === 0) {
+        return ''
+      }
+      if (consumed.length === 1) {
+        return `[Memory Reference: ${consumed[0]}]`
+      }
+      return `[Memory References (${consumed.length}): ${consumed.join(', ')}]`
     })
+    return cleanupEmptyLines(replaced)
   }
 
-  // Handle individual <memory ...>...</memory> tags
-  const memoryTagRegex = /<memory\s+[^>]*?uri=["']([^"']+)["'][^>]*>[\s\S]*?<\/memory>/gi
-  if (memoryTagRegex.test(rawText)) {
-    return rawText.replace(memoryTagRegex, (_match, uri) => {
-      return `[Memory Reference: ${uri}]`
+  // 2. 处理单独的 <memory ...>...</memory> 或 <memory-block ...>...</memory-block>
+  const singleTagRegex = /<(?:memory|memory-block)\s+[^>]*?(?:uri|id)=["']([^"']+)["'][^>]*>[\s\S]*?<\/(?:memory|memory-block)>/gi
+  if (singleTagRegex.test(rawText)) {
+    const replaced = rawText.replace(singleTagRegex, (_match, uriOrId) => {
+      if (!isConsumed(uriOrId)) {
+        return ''
+      }
+      return `[Memory Reference: ${uriOrId}]`
     })
+    return cleanupEmptyLines(replaced)
   }
 
-  const uriMatches = Array.from(rawText.matchAll(/uri=["']([^"']+)["']/g)).map(m => m[1])
-  if (uriMatches.length > 0) {
-    const unique = Array.from(new Set(uriMatches))
-    return `[Memory References (${unique.length}): ${unique.join(', ')}]`
+  // 3. 通用 fallback：匹配包含 uri="..." 或 id="..." 的片段
+  const uriMatches = Array.from(rawText.matchAll(/(?:uri|id)=["']([^"']+)["']/g)).map(m => m[1])
+  const valid = Array.from(new Set(uriMatches)).filter(
+    id => id.includes('://') || id.endsWith('.md')
+  )
+  if (valid.length > 0) {
+    const consumed = valid.filter(isConsumed)
+    if (consumed.length === 0) {
+      return ''
+    }
+    if (consumed.length === 1) {
+      return `[Memory Reference: ${consumed[0]}]`
+    }
+    return `[Memory References (${consumed.length}): ${consumed.join(', ')}]`
   }
 
   return rawText
+}
+
+function cleanupEmptyLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line, i, arr) => {
+      if (line.trim() === '' && i > 0 && arr[i - 1].trim() === '') return false
+      return true
+    })
+    .join('\n')
+    .trim()
 }
 
 /**
@@ -127,9 +184,9 @@ export const INFORMATION_DISTILLATION_MATRIX = `
    - 剔除：秒级高频变动的时间标记。
    - 提取：仅在跨天或关键任务里程碑时保留日期锚点（YYYY-MM-DD）。
 
-5. 【通用记忆插件召回 (Generic Memory Recalls)】：即用即焚，蒸发为 URI
-   - 剔除：历史轮次注入的长篇记忆正文、实体详情、事件切片。
-   - 提取：仅保留 URI 指针（如 [Memory References: viking://user/.../profile.md]）。
+5. 【通用记忆插件召回 (Generic Memory Recalls)】：足迹审查，无用蒸发
+   - 未消费召回：若在后续对话或工具调用中未被实际引用或讨论，判定为环境噪声，直接 100% 物理剔除（0 字符残留）。
+   - 已消费召回：剔除长篇正文，仅保留极简 URI 指针（如 [Memory Reference: viking://user/.../profile.md]）并跨轮去重。
 
 6. 【环境与沙箱快照 (Runtime & Sandbox)】：保留最新稳态
    - 剔除：历史步骤反复出现的运行时上下文、沙箱权限变更历史。
