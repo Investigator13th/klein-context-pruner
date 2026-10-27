@@ -20,7 +20,7 @@ import {
   type NudgeDecision,
 } from 'acp-kernel'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { AcpAgentLike as Agent } from './host-types.ts'
 import { AcpStateStore } from './state.ts'
 import { allLogMessages, eventsToCoreMessages, isCheckpointNode, surfaceEventsOf } from './messages.ts'
 import {

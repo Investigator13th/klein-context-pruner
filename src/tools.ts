@@ -12,7 +12,7 @@
 
 import { defineTool, ToolArgsError, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { buildStatusReport, defaultCountTokens, searchBlocks, type CompressionCore, type MessageRole, type SearchDoc } from 'acp-kernel'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { AcpAgentLike as Agent } from './host-types.ts'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { AcpStateStore } from './state.ts'
 import { kernelConfigFor, type KernelConfigInput } from './config.ts'

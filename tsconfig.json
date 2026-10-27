@@ -9,6 +9,8 @@
     "sourceMap": true,
     "outDir": "dist",
     "strict": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true

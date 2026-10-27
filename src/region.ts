@@ -433,16 +433,6 @@ export function verifiedReadingsOf(event: SessionEvent): string[] {
  * B1：给摘要块数组的第一个文本块加标源前缀（幂等——已带前缀不重复加）。
  * 只动文本块，工具/图片块原样保留。
  */
-export function prefixSummaryBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
-  let done = false
-  return blocks.map((block) => {
-    if (done || block.type !== 'text') return block
-    done = true
-    const textBlock = block as { type: 'text'; text: string }
-    return { ...textBlock, text: withSummaryFramePrefix(textBlock.text) } as ContentBlock
-  })
-}
-
 /**
  * Run one durable compression transaction. Throws on invalid state; on success
  * the four events are in the log and the surface has one summary node.
@@ -503,7 +493,14 @@ export function runCompactionTransaction(
     // `withSummaryFramePrefix` recognizes them by content — one rule shared with
     // the projection net in src/messages.ts, so what the model sees and what the
     // decompress header reads back are the same bytes.
-    const framedSummary = prefixSummaryBlocks(evaporateMemoryToUris(input.summary))
+    // `input.summary` is already block-shaped; the evaporator takes text, so the
+    // per-block text is moved through it and the block is rebuilt in place. One
+    // block in, one block out keeps the text-block count callers rely on.
+    const framedSummary: ContentBlock[] = input.summary.map((block) => (
+      block.type === 'text'
+        ? { type: 'text' as const, text: withSummaryFramePrefix(evaporateMemoryToUris(block.text)) }
+        : block
+    ))
     seqs.push(session.append('compaction/summary', {
       compactionId,
       summary: framedSummary,

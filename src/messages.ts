@@ -200,7 +200,7 @@ export function withSummaryFramePrefix(text: string): string {
   if (text.startsWith(SUMMARY_FRAME_PREFIX)) return text
   // Engine-written summaries are exempt: the frame claims a provenance they do
   // not have ("Model-written …"). Deciding that HERE — in the one function the
-  // creation write (region.ts `prefixSummaryBlocks`) and the projection net
+  // creation write (region.ts, in `compress`) and the projection net
   // (`projectEvent`) both go through — keeps the durable text and the
   // model-visible text identical by construction, instead of by two call-site
   // conditions that drift apart.

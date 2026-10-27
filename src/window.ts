@@ -15,7 +15,14 @@
  * @module billion-context-dsh/window
  */
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { AcpAgentLike } from './host-types.ts'
+
+/**
+ * The host `Agent`, seen through the members window resolution reads. The host
+ * `Agent` stays assignable here, so its signature still governs callers; the
+ * view exists because `@deepseek-ai/dsh-agent` is not a dependency of this repo.
+ */
+export type WindowAgentLike = AcpAgentLike
 
 /** Fallback window when auto-detection is unavailable. Same default as acp-kernel's `defaultConfig`. */
 export const DEFAULT_CONTEXT_WINDOW = 128000
@@ -98,7 +105,7 @@ interface ProjectionProbe {
  * host on every request, so it follows the real model without any config.
  * Returns null when the host exposes no projection or disclosed no window.
  */
-export function projectedContextWindow(agent: Agent): number | null {
+export function projectedContextWindow(agent: WindowAgentLike): number | null {
   const projections = agent.ctx?.get?.('sessionProjections') as ProjectionProbe | undefined
   const window = projections?.snapshot?.(agent.session)?.values?.contextPressure?.contextWindow
   if (typeof window === 'number' && Number.isInteger(window) && window > 0) return window
@@ -115,7 +122,7 @@ export function projectedContextWindow(agent: Agent): number | null {
  * back to `agent.options`. Never throws, like `probeModelWindow`: the caller
  * runs inside `agent/pre-step`, which has no surrounding try.
  */
-export function liveRoute(agent: Agent): { provider: string; model: string } | null {
+export function liveRoute(agent: WindowAgentLike): { provider: string; model: string } | null {
   let rc: { provider?: unknown; model?: unknown } | null | undefined
   try {
     rc = agent.session.requestContext()
@@ -146,7 +153,7 @@ export function liveRoute(agent: Agent): { provider: string; model: string } | n
  * copies is precisely how a stale-route bug gets fixed in one call site and
  * left behind in the others.
  */
-export function routeFor(agent: Agent): { provider: string; model: string } {
+export function routeFor(agent: WindowAgentLike): { provider: string; model: string } {
   const live = liveRoute(agent)
   return {
     provider: live?.provider ?? agent.options.provider ?? '',
@@ -175,7 +182,7 @@ export interface ModelWindowProbe {
  * callers keep the raw-window behavior in those cases.
  */
 export async function probeModelWindow(
-  agent: Agent,
+  agent: WindowAgentLike,
   provider: string,
   model: string,
 ): Promise<ModelWindowProbe> {
@@ -200,7 +207,7 @@ export async function probeModelWindow(
  * callers fall back to DEFAULT_CONTEXT_WINDOW. Never throws.
  */
 export async function detectContextWindow(
-  agent: Agent,
+  agent: WindowAgentLike,
   provider: string,
   model: string,
 ): Promise<number | null> {

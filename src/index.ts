@@ -36,10 +36,11 @@ import {
   type ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
 import { createCore, setDocCacheCap, type CompressionCore } from 'acp-kernel'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { AcpAgentLike } from './host-types.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { CONTEXT_WINDOW_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { CONTEXT_WINDOW_EXCEEDED_CODE, type Message, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type z from '@deepseek-ai/schemastery'
 import { DEFAULT_SESSION_CACHE_LIMIT, LruMap } from './lru.ts'
 import { AcpStateStore } from './state.ts'
 import { makeTools, type ToolEnvironment } from './tools.ts'
@@ -403,9 +404,9 @@ export class AcpCompactionEngine extends CompactionEngine {
   /** Per route the adapter's per-request output cap (the output reservation); null = undisclosed. */
   private readonly outputReservationCache = new Map<string, number | null>()
   /** Per-agent context-overflow recovery budget (mirrors the host's `overflowRetries`). */
-  private readonly overflowRetries = new Map<Agent, number>()
+  private readonly overflowRetries = new Map<AcpAgentLike, number>()
   /** Per-session overflow agents, so session progress can reset the recovery budget. */
-  private readonly overflowSessions = new Map<Session, Agent>()
+  private readonly overflowSessions = new Map<Session, AcpAgentLike>()
   constructor(ctx: Context, config: Partial<AcpConfig> = {}) {
     super(ctx)
     this.config = resolveAcpConfig(config)
@@ -503,16 +504,26 @@ export class AcpCompactionEngine extends CompactionEngine {
           )
           return undefined
         }
-        settingsCtx.settings.installSection(ctx, ACP_SETTINGS_NAMESPACE, AcpSettingsSchema, compositionEntry, {
-          // The seam's source type follows the entry it registered, so `source`
-          // is a partial view of the settings; re-resolve it into a
-          // fully-defaulted snapshot so every reader sees the same shape the
-          // composition path produced.
-          setSource: (source) => {
-            this.readSettingsSource = () => resolveAcpSettings(source())
+        settingsCtx.settings.installSection(
+          ctx,
+          ACP_SETTINGS_NAMESPACE,
+          // schemastery's `z<T>` lands the schema's *output* type on the hook
+          // payload, so `T` is inferred twice over (once as the schema node,
+          // once as `AcpSettings`) and the narrowed inference wins. Pin it once
+          // here instead of exporting a second, more permissive schema copy.
+          AcpSettingsSchema as unknown as z<AcpSettings>,
+          compositionEntry as AcpSettings,
+          {
+            // The seam's source type follows the entry it registered, so `source`
+            // is a partial view of the settings; re-resolve it into a
+            // fully-defaulted snapshot so every reader sees the same shape the
+            // composition path produced.
+            setSource: (source) => {
+              this.readSettingsSource = () => resolveAcpSettings(source())
+            },
+            onChange: applySettings,
           },
-          onChange: applySettings,
-        })
+        )
         // installSection hands out no service handle, and /acp-prune config needs
         // describe/update/replace — capture the service from the same optional
         // inject (fires only while a provider exists; a no-op otherwise).
@@ -640,9 +651,26 @@ export class AcpCompactionEngine extends CompactionEngine {
       // default empty in-flight set is safe.
       stripOrphanedSurfaceToolMessages(payload.agent.session)
       const decision = await next()
+      // The listener forwards the upstream decision verbatim, and every message
+      // set it adds is a sequence `next()` already treated as admitted.
+      // `PreStepDecision` cannot be named here: the host's agent package is not a
+      // dependency of this repo (see host-types.ts), and the registry copy is a
+      // different version. The shape is restated once, at the seam.
+      type EnterDecision = {
+        kind: 'enter'
+        messages: UserMessage[]
+        startsRequestSeries?: true
+      }
+      const enter = (messages: readonly Message[]): EnterDecision => ({
+        kind: 'enter',
+        // The step admits only user and developer messages, which is exactly the
+        // narrowing the host's `UserMessage[]` states — asserted once here,
+        // where the host type cannot be named.
+        messages: messages as UserMessage[],
+      })
       if (decision.kind === 'reject') return decision
       if (!engine.readSettingsSource().autoNudge) {
-        return { kind: 'enter', messages: organizeTailPlacement(decision.messages) }
+        return enter(organizeTailPlacement(decision.messages))
       }
       const window = await this.windowFor(payload.agent)
       const outcome = buildNudge(
@@ -660,9 +688,9 @@ export class AcpCompactionEngine extends CompactionEngine {
         },
       )
       if (outcome === null) {
-        return { kind: 'enter', messages: organizeTailPlacement(decision.messages) }
+        return enter(organizeTailPlacement(decision.messages))
       }
-      return { kind: 'enter', messages: organizeTailPlacement([...decision.messages, outcome.message]) }
+      return enter(organizeTailPlacement([...decision.messages, outcome.message]))
     })
     // ── Context-overflow recovery (M5) ─────────────────────────────────
     // The seam rethrows a failed request unless a listener answers
@@ -777,7 +805,7 @@ export class AcpCompactionEngine extends CompactionEngine {
    * exact value (they own the denominator); a failed probe keeps the raw
    * fallback.
    */
-  async windowFor(agent: Agent): Promise<AcpWindow> {
+  async windowFor(agent: AcpAgentLike): Promise<AcpWindow> {
     const live = this.readSettingsSource()
     if (live.modelContextLimit !== undefined) {
       return { limit: live.modelContextLimit, source: 'explicit' }
@@ -856,7 +884,7 @@ export class AcpCompactionEngine extends CompactionEngine {
    * probeModelWindow call (a local catalog lookup — no request is sent),
    * cached per route like the window itself.
    */
-  private async outputCapFor(agent: Agent, provider: string, model: string): Promise<number | null> {
+  private async outputCapFor(agent: AcpAgentLike, provider: string, model: string): Promise<number | null> {
     if (provider === '' || model === '') return null
     const key = `${provider}\0${model}`
     const known = this.outputReservationCache.get(key)
@@ -888,7 +916,7 @@ export class AcpCompactionEngine extends CompactionEngine {
    * model can re-run the compress tool over the marker later to write a real
    * summary. Returns null when nothing eligible exists (nothing to reclaim).
    */
-  private async compactForOverflow(agent: Agent, signal: AbortSignal): Promise<OverflowRecoveryResult | null> {
+  private async compactForOverflow(agent: AcpAgentLike, signal: AbortSignal): Promise<OverflowRecoveryResult | null> {
     signal.throwIfAborted()
     const session = agent.session
     const state = this.store.stateFor(session)

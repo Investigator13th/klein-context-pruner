@@ -201,6 +201,12 @@ test('Generic Memory Recall & Synthetic Injection Role Decoupling', async (t) =>
       messages,
       state,
       config,
+      // ProcessTurnInput requires the pipeline's token reading; the kernel never
+      // derives it itself. Reuse the same estimate the plugin's call sites pass.
+      tokenCount: messages.reduce(
+        (sum, m) => sum + JSON.stringify(m).length / 4,
+        0,
+      ),
     })
 
     const ranges = result.nudge?.compressibleRanges ?? []

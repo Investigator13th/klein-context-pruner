@@ -5,8 +5,30 @@
  * @module billion-context-dsh/commands
  */
 
-import type { CommandDefinition } from '@deepseek-ai/dsh-commands'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { AcpAgentLike as Agent } from './host-types.ts'
+/**
+ * The slash-command surface this module registers against. `dsh-commands` is a
+ * host package, so its types reach a consumer only through the host install —
+ * see the rationale in `host-types.ts`, which the rest of this plugin already
+ * follows for `dsh-agent`. Only the members `/acp-prune` produces or reads are
+ * named, which keeps the definition accepted by the host registry.
+ */
+export interface CommandInvocation {
+  readonly agent: Agent
+  /** Exact text following the registered command name, including separator whitespace. */
+  readonly rawInput: string
+}
+/** The result `/acp-prune` returns for every branch. */
+export interface CommandResult {
+  readonly kind: 'success' | 'error'
+  readonly text: string
+}
+/** Plugin-owned command registration. */
+export interface CommandDefinition {
+  readonly name: string
+  readonly description: string
+  readonly handler: (invocation: CommandInvocation) => CommandResult | Promise<CommandResult>
+}
 import { guardedRowsInSpan, protectedRowRejectionNote, resolveEffectiveWindow, type ToolEnvironment } from './tools.ts'
 import { resolveTokenCount } from './nudge.ts'
 import { kernelConfigFor } from './config.ts'
@@ -220,7 +242,7 @@ export function acpCommand(env: ToolEnvironment): CommandDefinition {
     description:
       'Active Context Pruning — model-driven context compression. '
       + 'Usage: /acp-prune status | /acp-prune compress <startSeq> <endSeq> <summary> | /acp-prune decompress <blockId> [offset] [limit] | /acp-prune config [list|set <key> <value>|reset <key>|all]',
-    handler: async (invocation) => {
+    handler: async (invocation: CommandInvocation) => {
       const raw = invocation.rawInput.trim()
       if (raw === '' || raw === 'status') {
         return { kind: 'success', text: await statusText(env, invocation.agent) }
