@@ -162,11 +162,15 @@ export function rangeTable(
   kernelView: KernelRangeView,
   prompts: ResolvedPrompts = DEFAULT_RESOLVED,
   mediaPriceOf?: MediaPriceOf,
+  preserveUserTurns?: number,
 ): string {
   const ranges = buildCompressibleSeqRanges(
     session,
     kernelView,
-    mediaPriceOf === undefined ? {} : { mediaPriceOf },
+    {
+      ...(mediaPriceOf === undefined ? {} : { mediaPriceOf }),
+      ...(preserveUserTurns === undefined ? {} : { preserveUserTurns }),
+    },
   ).slice(0, 6)
   // 零范围:整块省略(保留现状的提前返回与 nudge 尾部 '\n')。
   if (ranges.length === 0) return ''
@@ -348,6 +352,7 @@ export function buildNudge(
     kernelRangeViewOf(nudge, turn.state),
     env.prompts,
     mediaPriceOf,
+    env.preserveUserTurns,
   )
   const message = createUserMessage({
     content: [{ type: 'text', text }],
@@ -382,15 +387,16 @@ export function buildNudgeText(
   kernelView: KernelRangeView,
   prompts: ResolvedPrompts = DEFAULT_RESOLVED,
   mediaPriceOf?: MediaPriceOf,
+  preserveUserTurns?: number,
 ): string {
   // A host override of any nudge slot → template rendering (config.prompts
   // keeps its v0.1.9 contract: custom copy wins). Only the pristine default
   // reference reaches the kernel path.
   if (prompts.nudge !== DEFAULT_RESOLVED.nudge) {
-    return renderNudgeFromTemplates(nudge, emergency, session, kernelView, prompts, mediaPriceOf)
+    return renderNudgeFromTemplates(nudge, emergency, session, kernelView, prompts, mediaPriceOf, preserveUserTurns)
   }
   const rendered = renderNudgeText(nudge)
-  return adaptKernelNudgeToSeq(rendered.text, nudge, session, kernelView, prompts, mediaPriceOf)
+  return adaptKernelNudgeToSeq(rendered.text, nudge, session, kernelView, prompts, mediaPriceOf, preserveUserTurns)
 }
 
 /**
@@ -414,6 +420,7 @@ function adaptKernelNudgeToSeq(
   kernelView: KernelRangeView,
   prompts: ResolvedPrompts,
   mediaPriceOf?: MediaPriceOf,
+  preserveUserTurns?: number,
 ): string {
   // B6：先摘掉哲学/规则段（它们住在系统提示与工具描述里），再做 seq 适配
   let out = stripNudgeGuidance(text)
@@ -429,7 +436,7 @@ function adaptKernelNudgeToSeq(
   // Replace the ref-ID range table (mNNNNN) with the surface-seq table.
   // A zero-range table leaves the kernel's own "[No specific ranges detected]"
   // notice intact — it is a better prompt than an empty table.
-  const seqTable = rangeTable(session, kernelView, prompts, mediaPriceOf)
+  const seqTable = rangeTable(session, kernelView, prompts, mediaPriceOf, preserveUserTurns)
   if (seqTable !== '') out = replaceRangesStr(out, seqTable)
   return out
 }
@@ -505,6 +512,7 @@ function renderNudgeFromTemplates(
   kernelView: KernelRangeView,
   prompts: ResolvedPrompts,
   mediaPriceOf?: MediaPriceOf,
+  preserveUserTurns?: number,
 ): string {
   // Cap the reported percentage at 100: a broken measurement (e.g. response
   // pressure folded in) must never surface as an absurd "230%" to the model.
@@ -559,7 +567,7 @@ function renderNudgeFromTemplates(
     parts.push('', tierRules)
   } else {
     // Range table for non-tier nudges (DSH-specific: seq-based, not ref-ID-based).
-    parts.push(rangeTable(session, kernelView, prompts, mediaPriceOf))
+    parts.push(rangeTable(session, kernelView, prompts, mediaPriceOf, preserveUserTurns))
   }
 
   // Batch-compress tip (from kernel's nudge-text.ts style).

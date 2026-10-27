@@ -229,6 +229,8 @@ export interface AcpConfig {
    * reached if the plumbing broke). Default: enabled.
    */
   readonly settingsEnabled?: boolean
+  /** Number of recent real user turns to protect from compression. Default 3. */
+  readonly preserveUserTurns?: number
   /** Per-stage prompt template overrides (nudge / range table / system prompt / tool descriptions). See docs/configurable-prompts-design.md. */
   readonly prompts?: AcpPrompts
 }
@@ -238,6 +240,7 @@ const DEFAULT_CONFIG: AcpConfig = {
   autoTools: true,
   autoCommand: true,
   autoNudge: true,
+  preserveUserTurns: 3,
   // Same default as the host's compaction-basic policy: one owned retry per
   // unrelieved overflow, then the original error is preserved.
   maxOverflowRetries: 1,
@@ -259,11 +262,15 @@ export function resolveAcpConfig(config: Partial<AcpConfig> = {}): AcpConfig {
   if (!Number.isInteger(maxOverflowRetries) || maxOverflowRetries < 0) {
     throw new Error(`maxOverflowRetries must be a non-negative integer (got ${maxOverflowRetries})`)
   }
+  const preserveUserTurns = resolved.preserveUserTurns ?? 3
+  if (!Number.isInteger(preserveUserTurns) || preserveUserTurns < 1) {
+    throw new Error(`preserveUserTurns must be a positive integer (got ${preserveUserTurns})`)
+  }
   // Write the validated value BACK: an explicit `maxOverflowRetries: undefined`
   // in a Partial config survives the `{ ...DEFAULT_CONFIG, ...config }` spread
   // as `undefined`, and the request-error listener must never read that as
   // "budget 0" (recovery silently disabled while the config says default).
-  return { ...resolved, maxOverflowRetries }
+  return { ...resolved, maxOverflowRetries, preserveUserTurns }
 }
 
 /**
@@ -532,6 +539,7 @@ export class AcpCompactionEngine extends CompactionEngine {
       get nudgeMinContextLimitPct() { return engine.readSettingsSource().nudgeMinContextLimitPct },
       get nudgeMaxContextLimitPct() { return engine.readSettingsSource().nudgeMaxContextLimitPct },
       get nudgeEmergencyThresholdPct() { return engine.readSettingsSource().nudgeEmergencyThresholdPct },
+      get preserveUserTurns() { return engine.config.preserveUserTurns ?? 3 },
       coreOverrides: this.config.coreOverrides,
       // Display-only: which named preset produced the thresholds above (if any),
       // so /acp-prune status can name it. The resolved pct values above are what the
@@ -919,6 +927,7 @@ export class AcpCompactionEngine extends CompactionEngine {
     // tuning change made for the advisory table.
     const ranges = buildCompressibleSeqRanges(session, view, {
       preserveRecent: 5,
+      preserveUserTurns: this.config.preserveUserTurns ?? 3,
       mediaPriceOf: meterMediaPriceResolver(agent, session),
     })
     if (ranges.length === 0) return null

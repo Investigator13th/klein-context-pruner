@@ -25,6 +25,8 @@ export interface KernelConfigInput {
   readonly nudgeMaxContextLimitPct?: number
   /** Emergency nudge threshold (bypasses per-turn dedup; capped at 3 injections per user turn — issue #108). Kernel default: 0.95. */
   readonly nudgeEmergencyThresholdPct?: number
+  /** Number of recent real user turns to protect from compression. Default: 3. */
+  readonly preserveUserTurns?: number
   /** Any other acp-kernel Config override (the billion-context-pi escape hatch). */
   readonly coreOverrides?: Partial<Config>
 }
@@ -40,13 +42,16 @@ export function kernelConfigFor(input: KernelConfigInput): Config {
   if (input.nudgeMaxContextLimitPct !== undefined) nudgePatch.maxContextLimitPct = input.nudgeMaxContextLimitPct
   if (input.nudgeEmergencyThresholdPct !== undefined) nudgePatch.emergencyThresholdPct = input.nudgeEmergencyThresholdPct
 
-  const overrides: Partial<Config> = {
+  const overrides: Partial<Config> & { preserveUserTurns?: number } = {
     compress: {
       ...defaultConfig(input.modelContextLimit).compress,
       minCompressRange: 2000,
       ...input.coreOverrides?.compress,
     },
     ...input.coreOverrides,
+  }
+  if (input.preserveUserTurns !== undefined) {
+    overrides.preserveUserTurns = input.preserveUserTurns
   }
   if (Object.keys(nudgePatch).length > 0 || input.coreOverrides?.nudge) {
     // The engine always ships explicit pct defaults (0.70/0.85, see

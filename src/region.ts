@@ -1010,14 +1010,25 @@ export function newestInstructionSeqsOf(session: Session): Set<number> {
  * Engine-authored metadata rows (nudge echo, compress-pair stub) stay
  * foldable like main, and STALE copies of the same file stay compressible —
  * removing them while the newest copy stays visible is the real cleanup.
+ * Also protects the last `preserveUserTurns` real user turns (default 3).
  */
-export function guardedSurfaceSeqsOf(session: Session): Set<number> {
+export function guardedSurfaceSeqsOf(session: Session, preserveUserTurns: number = 3): Set<number> {
   const guarded = new Set<number>()
   const newestInstructions = newestInstructionSeqsOf(session)
   for (const seq of session.surface.nodes) {
     const event = eventAtOf(session, seq)
     if (event === undefined) continue
     if (isAgentInstructionsRow(event) && newestInstructions.has(seq)) guarded.add(seq)
+  }
+  let userTurnsCount = 0
+  const nodes = session.surface.nodes
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const event = eventAtOf(session, nodes[index]!)
+    if (event !== undefined && isRealUserTurn(event)) {
+      guarded.add(nodes[index]!)
+      userTurnsCount += 1
+      if (userTurnsCount >= preserveUserTurns) break
+    }
   }
   return guarded
 }
@@ -1062,7 +1073,7 @@ function seqOfKernelRef(refs: KernelRangeView['refs'], ref: string): number | nu
  *   copy of an instruction file the moment it disappears from the surface, so
  *   folding it reclaims nothing (rule 16).
  */
-function protectedSurfaceSeqs(session: Session, preserve: number): Set<number> {
+function protectedSurfaceSeqs(session: Session, preserve: number, preserveUserTurns: number = 3): Set<number> {
   const nodes = session.surface.nodes
   const protectedSeqs = new Set<number>()
   // `nodes.slice(-preserve)` would protect EVERYTHING when preserve is 0
@@ -1070,18 +1081,16 @@ function protectedSurfaceSeqs(session: Session, preserve: number): Set<number> {
   if (preserve > 0) {
     for (const seq of nodes.slice(-preserve)) protectedSeqs.add(seq)
   }
-  // Only a REAL user turn may win "last user message" protection. A plain
-  // `role === 'user'` scan protects the injected AGENTS.md row instead whenever
-  // the host appended it in the same enter batch as the user input — the actual
-  // last user message was then left compressible while synthetic output sat
-  // safe (issue #71 PR1). The classifier subsumes the narrower guards the old
-  // scan carried: checkpoints are their own class, and engine-authored rows
-  // (prune tombstones, compress-pair stubs) are `metadata`.
+  // Protect the last `preserveUserTurns` real user turns (default 3).
+  // A plain `role === 'user'` scan protects the injected AGENTS.md row instead
+  // whenever the host appended it in the same enter batch as the user input.
+  let userTurnsCount = 0
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const event = eventAtOf(session, nodes[index]!)
     if (event !== undefined && isRealUserTurn(event)) {
       protectedSeqs.add(nodes[index]!)
-      break
+      userTurnsCount += 1
+      if (userTurnsCount >= preserveUserTurns) break
     }
   }
   for (const seq of newestInstructionSeqsOf(session)) protectedSeqs.add(seq)
@@ -1219,7 +1228,7 @@ function compressibleSegmentsOf(
 export function buildCompressibleSeqRanges(
   session: Session,
   kernelView: KernelRangeView,
-  opts: { preserveRecent?: number; mediaPriceOf?: MediaPriceOf } = {},
+  opts: { preserveRecent?: number; preserveUserTurns?: number; mediaPriceOf?: MediaPriceOf } = {},
 ): SeqCompressibleRange[] {
   // Orphan tool messages corrupt the pairing balance cache and fragment every
   // large span. Prune them before mapping so the table reflects the surface
@@ -1228,7 +1237,7 @@ export function buildCompressibleSeqRanges(
   const nodes = session.surface.nodes
   const indexOfSeq = new Map<number, number>()
   for (let index = 0; index < nodes.length; index += 1) indexOfSeq.set(nodes[index]!, index)
-  const protectedSeqs = protectedSurfaceSeqs(session, opts.preserveRecent ?? 5)
+  const protectedSeqs = protectedSurfaceSeqs(session, opts.preserveRecent ?? 5, opts.preserveUserTurns ?? 3)
   const out: SeqCompressibleRange[] = []
   for (const range of kernelView.ranges) {
     const startSeq = seqOfKernelRef(kernelView.refs, range.startRef)

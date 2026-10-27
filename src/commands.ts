@@ -141,9 +141,9 @@ function compressText(env: ToolEnvironment, agent: Agent, args: string[]): strin
   // move them to a balanced cut, and a raw edge absent from the surface makes
   // shadowedSeqsOf slice a garbage span.
   const shadowed = shadowedSeqsOf(session, start, end)
-  const instructionHits = guardedRowsInSpan(guardedSurfaceSeqsOf(session), shadowed)
+  const instructionHits = guardedRowsInSpan(guardedSurfaceSeqsOf(session, env.preserveUserTurns ?? 3), shadowed)
   if (instructionHits.length > 0) {
-    return protectedRowRejectionNote(start, end, instructionHits, shadowed)
+    return protectedRowRejectionNote(start, end, instructionHits, shadowed, session)
   }
   // Price the reclaimed tokens in the HOST's token vocabulary (rule 12):
   // prefer the live meter's per-node prices, fall back to the exact mirror.
