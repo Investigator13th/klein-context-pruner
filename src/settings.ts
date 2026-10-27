@@ -30,13 +30,14 @@ import type { SettingsDescriptor, SettingsProvider } from '@deepseek-ai/dsh-sett
  */
 export const ACP_SETTINGS_NAMESPACE = 'compaction-acp'
 
-/** The six knobs exposed to the runtime settings layer. Order defines /acp-prune config listing order. */
+/** The nine knobs exposed to the runtime settings layer. Order defines /acp-prune config listing order. */
 export const SETTINGS_KEYS = [
   'modelContextLimit',
   'autoModelContextLimit',
   'nudgeMinContextLimitPct',
   'nudgeMaxContextLimitPct',
   'nudgeEmergencyThresholdPct',
+  'nudgeHeadroomRatio',
   'autoNudge',
 ] as const
 
@@ -51,6 +52,11 @@ export interface AcpSettings {
   readonly nudgeMinContextLimitPct?: number
   readonly nudgeMaxContextLimitPct: number
   readonly nudgeEmergencyThresholdPct: number
+  /**
+   * Soft-trigger headroom reserve fraction (kernel patch F). Absent = the
+   * kernel's own 0.25 stays in effect.
+   */
+  readonly nudgeHeadroomRatio?: number
   readonly autoNudge: boolean
 }
 
@@ -80,6 +86,7 @@ export interface AcpSettingsCompositionEntry {
   readonly nudgeMinContextLimitPct?: number
   readonly nudgeMaxContextLimitPct?: number
   readonly nudgeEmergencyThresholdPct?: number
+  readonly nudgeHeadroomRatio?: number
   readonly autoNudge?: boolean
 }
 
@@ -98,6 +105,7 @@ export function filterSettingsEntry(entry: AcpSettingsCompositionEntry): AcpSett
     ...(entry.nudgeMinContextLimitPct !== undefined ? { nudgeMinContextLimitPct: entry.nudgeMinContextLimitPct } : {}),
     ...(entry.nudgeMaxContextLimitPct !== undefined ? { nudgeMaxContextLimitPct: entry.nudgeMaxContextLimitPct } : {}),
     ...(entry.nudgeEmergencyThresholdPct !== undefined ? { nudgeEmergencyThresholdPct: entry.nudgeEmergencyThresholdPct } : {}),
+    ...(entry.nudgeHeadroomRatio !== undefined ? { nudgeHeadroomRatio: entry.nudgeHeadroomRatio } : {}),
     ...(entry.autoNudge !== undefined ? { autoNudge: entry.autoNudge } : {}),
   }
 }
@@ -110,6 +118,7 @@ export function resolveAcpSettings(input: AcpSettingsInput): AcpSettings {
     nudgeMinContextLimitPct: input.nudgeMinContextLimitPct,
     nudgeMaxContextLimitPct: input.nudgeMaxContextLimitPct ?? SETTING_DEFAULTS.nudgeMaxContextLimitPct,
     nudgeEmergencyThresholdPct: input.nudgeEmergencyThresholdPct ?? SETTING_DEFAULTS.nudgeEmergencyThresholdPct,
+    nudgeHeadroomRatio: input.nudgeHeadroomRatio,
     autoNudge: input.autoNudge ?? SETTING_DEFAULTS.autoNudge,
   }
 }
@@ -126,6 +135,7 @@ export const AcpSettingsSchema = z.object({
   nudgeMinContextLimitPct: z.number().min(0).max(1),
   nudgeMaxContextLimitPct: z.number().min(0).max(1).default(SETTING_DEFAULTS.nudgeMaxContextLimitPct),
   nudgeEmergencyThresholdPct: z.number().min(0).max(1).default(SETTING_DEFAULTS.nudgeEmergencyThresholdPct),
+  nudgeHeadroomRatio: z.number().min(0).max(1),
   autoNudge: z.boolean().default(SETTING_DEFAULTS.autoNudge),
 })
 

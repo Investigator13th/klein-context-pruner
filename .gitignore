@@ -3,3 +3,9 @@ node_modules
 /dist-*
 *.log
 .worktrees/
+# Local pre-edit safety copies (<name>.bak-<YYYY-MM-DD>-<purpose>, per AGENTS.md).
+# Their content is always recoverable from git history, so they must never be
+# committed — the vendored kernel dist is the one place a stale copy would be
+# mistaken for the live snapshot.
+*.bak-*
+.git-commit-msg.tmp

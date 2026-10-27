@@ -143,6 +143,18 @@ export interface NudgeConfig {
      *  (zero-yield loop, #198). Default: max(5000, round(modelContextLimit ×
      *  0.01)). Set 0 to restore the legacy any-pending behavior. */
     minPressureBenefitTokens?: number;
+    /** [patch F] Soft-trigger headroom reserve as a fraction of the context
+     *  window. The nudge fires once `tokenCount >= limit - limit × this`, i.e.
+     *  a REMAINING-space test that replaces the growth-since-reference test.
+     *  Keep it > (1 - maxContextLimitPct) so the soft trigger still lands
+     *  before the hard line. Default 0.25. */
+    headroomRatio?: number;
+    /** [patch F] Floor for the headroom reserve, in tokens. Default 20000. */
+    headroomFloor?: number;
+    /** [patch F] Cap for the headroom reserve, in tokens. Default 250000 —
+     *  kept above (1 - maxContextLimitPct) × limit at every sane window so the
+     *  soft trigger never lands after the hard line. */
+    headroomCap?: number;
 }
 export interface TruncateConfig {
     threshold: number;

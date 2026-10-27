@@ -12,13 +12,13 @@
 | 快照日期 | 2026-10-27 |
 | 快照形态 | **编译产物（dist）快照**，非 src 反解 |
 | 快照来源 | `node_modules/acp-kernel`（已被 `scripts/patch-kernel.mjs` 打过全部补丁的版本） |
-| `dist/index.js` SHA-256 | `4AF74EA132197E1B8C95CB564A4A6FBB59EA26FAD653372DD93227E36485EF24` |
+| `dist/index.js` SHA-256 | `DC59201B3627A2F4F182E25DA985C0E86038C6BD4421217C58210A9FDE683082` |
 | 文件总数 / 体积 | 151 文件 / 约 1.07 MB（含 sourcemap） |
 | 分发根 | `.`（仅 `dist/index.js` 被 `src/` 引用，见第四节） |
 
 **为什么选 dist 快照而非反解 src**：自研改动只有 5 处定点替换，逐字记录于本文件并保留在 git 历史里的旧 `patch-kernel.mjs` 中，比反解 156 KB 的 minified 产物更可靠；代价是本目录不可直接阅读修改，需要"改上游再快照"的工作流（见第六节）。
 
-## 二、自研改动清单（Patch A1 / A2 / A3 / D / B）
+## 二、自研改动清单（Patch A1 / A2 / A3 / D / B / F）
 
 以下 5 处补丁由旧脚本 `scripts/patch-kernel.mjs` 在 `pnpm install` 的 `prepare` 与 `pnpm build` 的 `prebuild` 阶段对 `node_modules` 内的内核 dist 做字符串替换。自本快照起，这些改写已经固化为仓库内容，脚本与钩子已废弃。
 
@@ -66,9 +66,22 @@
   - 若非空：`injectedTier = 1;`，`injectedReason = \`${label} T1 fallback: ${fallbackRanges.length} ranges available, usage ${Math.round(usage * 100)}%\`;`
 - 效果：只要有可压区间就在超限时给出 T1 兜底提示。
 
-## 三、上游行为登记（未修改，仅知会）
+### F — 软触发判据：从「增长量」改为「剩余余量」
 
-### 上游 `Tip: buildStatusReport(...)` 调试行
+- 目的：上游软触发的判据是"距上次参考点增长了多少 token"（`growthSinceReference >= growthFloor`，`growthFloor = max(20000, 0.45 × nudgeGrowthTokens)`，`nudgeGrowthTokens` 被 cap 在 50000，故恒定 20000–22500）。这个判据隐含"上下文越长越该压"的假设，但它无法区分两种增长：**突发大粘贴**（真该压）与**长会话缓慢积累**（还有一半余量，不该压）。结果是在软触发与硬线之间只剩很窄的窗口，且压缩后回写参考点的时机被 −22500 的回落阈值卡住（`dist/index.js:2379`），压缩不重置参照点会形成自我强化。
+- 位置：`dist/index.js` 的 `resolveHeadroomTokens`（新增函数）、`defaultConfig` 的 `nudge` 默认块、`decideNudge` 的软触发判定与未触发原因文案。
+- 改动：
+  1. 新增 `resolveHeadroomTokens(modelContextLimit, nudge)`：
+     `Math.min(headroomCap, Math.max(headroomFloor, Math.round(limit × headroomRatio)))`，窗口未知时回落 `headroomFloor`。
+  2. `defaultConfig` 的 `nudge` 块新增三个字段：`headroomRatio: 0.25`、`headroomFloor: 2e4`、`headroomCap: 2.5e5`；同时把 `maxContextLimitPct` 由 `0.75` 改为 `0.85`。
+  3. 软触发判定替换：
+     - 旧：`const growthReady = firstSightMassReady || growthSinceReference >= growthFloor`
+     - 新：`const headroomTokens = resolveHeadroomTokens(limit, config.nudge); const headroomReady = limit > 0 && tokenCount >= limit - headroomTokens; const growthReady = firstSightMassReady || headroomReady`
+  4. 未触发原因文案由 `growth ${growthSinceReference} < floor ${growthFloor}` 改为 `headroom ${limit - tokenCount} > reserve ${headroomTokens}`。
+- 效果（`modelContextLimit = 131072`）：余量 32768，软触发 98304（75%），硬线 111411（85%），紧急 124518（95%），软硬间隔 13107。窗口越大间隔越宽（262144 → 软 75%/硬 85%，间隔 26214）。`headroomCap` 取 2.5e5 而非 5e4，是因为 5e4 在 1M 窗口下会让 `1 − ratio` 跌破硬线，软触发反而排在硬触发之后。
+- 保留不动：`growthSinceReference` 仍参与 `computeContextBreakdown` 与 nudge 文案的 `+{growth}K since last nudge` 显示，只是退出判定；`lastPerMessageNudgeTokens` 的回落检测（`:2379`）、`lastShownByTier` 的 T2/T3 冷却（`:2795`/`:2802`）、`maxContextLimitPct` 超限强制触发线（现已是有意义的 0.85）全部照旧生效。
+
+## 三、上游行为登记（未修改，仅知会）
 
 - 现象：`acp_status` 的 drilldown 输出末尾会带一行
   `Tip: buildStatusReport({scope:"uncompressed", view:"messages", tool:"xxx"}) for per-message listing`

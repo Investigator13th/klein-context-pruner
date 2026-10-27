@@ -305,7 +305,7 @@ function defaultConfig(modelContextLimit, overrides = {}) {
   const base = {
     tiers: { enabled: true, tier2Trigger: 5, tier3Trigger: 10 },
     nudge: {
-      maxContextLimitPct: 0.75,
+      maxContextLimitPct: 0.85,
       minContextLimitPct: 0.45,
       frequency: 5,
       iterationThreshold: 15,
@@ -315,6 +315,9 @@ function defaultConfig(modelContextLimit, overrides = {}) {
       growthCap: 5e4,
       minGrowthFloor: 2e4,
       minGrowthRatio: 0.45,
+      headroomRatio: 0.25,
+      headroomFloor: 2e4,
+      headroomCap: 2.5e5,
       emergencyThresholdPct: 0.95,
       tier2GrowthMultiplier: 1.5
     },
@@ -2698,6 +2701,14 @@ function resolveAdaptiveGrowth(modelContextLimit, nudge) {
 function resolveMinPressureBenefit(modelContextLimit, nudge) {
   return nudge.minPressureBenefitTokens ?? Math.max(5e3, Math.round(modelContextLimit * 0.01));
 }
+function resolveHeadroomTokens(modelContextLimit, nudge) {
+  if (!modelContextLimit || modelContextLimit <= 0) return nudge.headroomFloor ?? 2e4;
+  const ratio = nudge.headroomRatio ?? 0.25;
+  return Math.min(
+    nudge.headroomCap ?? 2.5e5,
+    Math.max(nudge.headroomFloor ?? 2e4, Math.round(modelContextLimit * ratio))
+  );
+}
 function pendingByTier(state, recommendation, countTokens, minCompressRange) {
   const out = {};
   const merged = recommendation?.recommendedRanges ?? [];
@@ -2755,7 +2766,9 @@ function decideNudge(input) {
   const t2Pen = tiers[2]?.pending ?? 0;
   const t3Pen = tiers[3]?.pending ?? 0;
   const firstSightMassReady = state.nudge.lastNudgeShownTokens === 0 && baseline === 0 && usage >= config.nudge.minContextLimitPct && Math.max(t1Eff, t2Pen, t3Pen) >= nudgeGrowthTokens;
-  const growthReady = firstSightMassReady || growthSinceReference >= growthFloor;
+  const headroomTokens = resolveHeadroomTokens(limit, config.nudge);
+  const headroomReady = limit > 0 && tokenCount >= limit - headroomTokens;
+  const growthReady = firstSightMassReady || headroomReady;
   const t2Count = tiers[2]?.targetBlocks.length ?? 0;
   const t3Count = tiers[3]?.targetBlocks.length ?? 0;
   const tierCountUsageFloor = config.nudge.minContextLimitPct;
@@ -2838,14 +2851,14 @@ function decideNudge(input) {
       ...Object.values(tiers).map((t) => t.pending)
     );
     const pendingShort = maxPending < nudgeGrowthTokens;
-    const growthShort = growthSinceReference < growthFloor;
+    const headroomShort = !headroomReady;
     const parts = [];
     if (pendingShort)
       parts.push(
         `max compressible ${maxPending} < threshold ${nudgeGrowthTokens}`
       );
-    if (growthShort)
-      parts.push(`growth ${growthSinceReference} < floor ${growthFloor}`);
+    if (headroomShort)
+      parts.push(`headroom ${limit > 0 ? limit - tokenCount : 0} > reserve ${headroomTokens}`);
     if (parts.length === 0)
       parts.push(
         `max compressible ${maxPending}, growth ${growthSinceReference}`

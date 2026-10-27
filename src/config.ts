@@ -27,6 +27,17 @@ export interface KernelConfigInput {
   readonly nudgeEmergencyThresholdPct?: number
   /** Number of recent real user turns to protect from compression. Default: 3. */
   readonly preserveUserTurns?: number
+  /**
+   * Soft-trigger headroom reserve as a fraction of `modelContextLimit` (kernel
+   * patch F). The nudge fires once `tokenCount >= limit - limit * ratio`, i.e.
+   * based on REMAINING space instead of "how much grew since the last nudge".
+   * Kernel default: 0.25 (128K window → reserve 32768, soft trigger at 75%).
+   */
+  readonly nudgeHeadroomRatio?: number
+  /** Floor for the headroom reserve in absolute tokens. Kernel default: 20000. */
+  readonly nudgeHeadroomFloor?: number
+  /** Cap for the headroom reserve. Kernel default: 250000 — kept above 1 - maxContextLimitPct × limit at every sane window so the soft trigger never lands after the hard line. */
+  readonly nudgeHeadroomCap?: number
   /** Any other acp-kernel Config override (the billion-context-pi escape hatch). */
   readonly coreOverrides?: Partial<Config>
 }
@@ -41,6 +52,9 @@ export function kernelConfigFor(input: KernelConfigInput): Config {
   if (input.nudgeMinContextLimitPct !== undefined) nudgePatch.minContextLimitPct = input.nudgeMinContextLimitPct
   if (input.nudgeMaxContextLimitPct !== undefined) nudgePatch.maxContextLimitPct = input.nudgeMaxContextLimitPct
   if (input.nudgeEmergencyThresholdPct !== undefined) nudgePatch.emergencyThresholdPct = input.nudgeEmergencyThresholdPct
+  if (input.nudgeHeadroomRatio !== undefined) nudgePatch.headroomRatio = input.nudgeHeadroomRatio
+  if (input.nudgeHeadroomFloor !== undefined) nudgePatch.headroomFloor = input.nudgeHeadroomFloor
+  if (input.nudgeHeadroomCap !== undefined) nudgePatch.headroomCap = input.nudgeHeadroomCap
 
   const overrides: Partial<Config> & { preserveUserTurns?: number } = {
     compress: {

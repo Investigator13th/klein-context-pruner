@@ -191,6 +191,19 @@ export interface AcpConfig {
    */
   readonly preset?: PresetName
   /**
+   * Soft-trigger headroom reserve as a fraction of the resolved context window
+   * (kernel patch F). The nudge fires once `tokenCount >= limit - limit * ratio`
+   * — a REMAINING-space test rather than the upstream "how much grew since the
+   * last nudge" test, which could not tell a burst paste (compress now) from a
+   * long slow session (still half empty). Kernel default 0.25: at a 128K window
+   * the reserve is 32768 and the soft trigger sits at 75% of the window.
+   */
+  readonly nudgeHeadroomRatio?: number
+  /** Floor for the headroom reserve, in absolute tokens. Kernel default 20000. */
+  readonly nudgeHeadroomFloor?: number
+  /** Cap for the headroom reserve, in absolute tokens. Kernel default 250000. */
+  readonly nudgeHeadroomCap?: number
+  /**
    * Any other acp-kernel Config override (billion-context-pi's `coreOverrides`
    * escape hatch). Merge order per section: kernel defaults → the engine pct
    * knobs above → these keys land LAST, so a same-name key here wins.
@@ -550,6 +563,11 @@ export class AcpCompactionEngine extends CompactionEngine {
       get nudgeMinContextLimitPct() { return engine.readSettingsSource().nudgeMinContextLimitPct },
       get nudgeMaxContextLimitPct() { return engine.readSettingsSource().nudgeMaxContextLimitPct },
       get nudgeEmergencyThresholdPct() { return engine.readSettingsSource().nudgeEmergencyThresholdPct },
+      get nudgeHeadroomRatio() { return engine.readSettingsSource().nudgeHeadroomRatio },
+      // headroomFloor / headroomCap are tuning bounds, not day-to-day knobs:
+      // they stay on coreOverrides so they never pollute the settings snapshot.
+      nudgeHeadroomFloor: this.config.nudgeHeadroomFloor,
+      nudgeHeadroomCap: this.config.nudgeHeadroomCap,
       get preserveUserTurns() { return engine.config.preserveUserTurns ?? 3 },
       coreOverrides: this.config.coreOverrides,
       // Display-only: which named preset produced the thresholds above (if any),
