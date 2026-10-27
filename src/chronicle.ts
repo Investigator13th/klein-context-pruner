@@ -37,13 +37,39 @@ export function formatTime(d: Date): string {
 }
 
 /**
- * 获取默认冷区 Chronicle 存储目录
- * 优先环境变量或当前工作区下的 memory/wiki/chronicle
+ * 获取冷区 Chronicle 存储目录。
+ *
+ * 解析优先级：显式配置 > 环境变量 > 一致性回退。
+ *
+ * 记忆真源必须跨会话、跨工作区恒定，所以这里绝不能把 `process.cwd()` 作为
+ * 首选。cwd 会随会话切换主工作区而改变：一旦把某个子目录设为主工作区，
+ * Chronicle 就会新建一份同名目录，与真正的冷区各写各的，晚间 Dreaming 读到
+ * 的是旧副本，记忆自此分裂。
+ *
+ * 回退策略是「向上搜索」而非「就地取用」：从 cwd 逐级上溯，第一个包含
+ * `memory/` 的目录即为真源根。这样从 Klein 根、从 Klein/home，或从任何
+ * Klein 子目录启动，都会一致地落到同一个 `Klein/memory/wiki/chronicle`。
  */
 export function resolveChronicleDir(customDir?: string): string {
   if (customDir) return customDir;
   if (process.env.KLEIN_CHRONICLE_DIR) return process.env.KLEIN_CHRONICLE_DIR;
-  return path.resolve(process.cwd(), "memory", "wiki", "chronicle");
+  const memoryRoot = findMemoryRoot(process.cwd());
+  return path.join(memoryRoot, "memory", "wiki", "chronicle");
+}
+
+/**
+ * 从起始目录向上寻找最近的、包含 `memory/` 子目录的**父目录**（即记忆真源根，
+ * 例如 `Klein`，而非 `Klein/memory`）。
+ * 找不到时返回起始目录本身（保持旧行为，不抛错）。
+ */
+export function findMemoryRoot(startDir: string): string {
+  let current = path.resolve(startDir);
+  for (;;) {
+    if (fs.existsSync(path.join(current, "memory"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return path.resolve(startDir);
+    current = parent;
+  }
 }
 
 /**

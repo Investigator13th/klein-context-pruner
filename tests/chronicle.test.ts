@@ -5,9 +5,76 @@ import path from "node:path";
 import os from "node:os";
 import {
   appendChronicleEntry,
+  findMemoryRoot,
   formatDate,
   formatTime,
+  resolveChronicleDir,
 } from "../src/chronicle.js";
+
+/**
+ * 记忆真源必须跨会话、跨工作区恒定。以下三个用例锁定这条契约：
+ * cwd 一旦变化，Chronicle 绝不能分裂成两份各写各的。
+ */
+test("findMemoryRoot walks UP from a nested cwd instead of taking cwd literally", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "memroot-"));
+  try {
+    fs.mkdirSync(path.join(root, "memory", "wiki", "chronicle"), { recursive: true });
+    const nested = path.join(root, "home", "deep", "nested");
+    fs.mkdirSync(nested, { recursive: true });
+
+    // 从深层子目录上溯，必须回到带 memory/ 的那一层
+    assert.equal(findMemoryRoot(nested), root);
+    // 起点自己就是真源根时原地返回
+    assert.equal(findMemoryRoot(root), root);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("findMemoryRoot falls back to the start dir when no memory/ exists above", () => {
+  const lonely = fs.mkdtempSync(path.join(os.tmpdir(), "nomem-"));
+  try {
+    assert.equal(findMemoryRoot(lonely), path.resolve(lonely));
+  } finally {
+    fs.rmSync(lonely, { recursive: true, force: true });
+  }
+});
+
+test("resolveChronicleDir lands on the SAME directory from the root and from a nested subdir", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "chronicle-unify-"));
+  const savedEnv = process.env.KLEIN_CHRONICLE_DIR;
+  const savedCwd = process.cwd();
+  try {
+    delete process.env.KLEIN_CHRONICLE_DIR;
+    fs.mkdirSync(path.join(root, "memory", "wiki", "chronicle"), { recursive: true });
+    const subdir = path.join(root, "home");
+    fs.mkdirSync(subdir, { recursive: true });
+
+    process.chdir(root);
+    const fromRoot = resolveChronicleDir();
+    process.chdir(subdir);
+    const fromSubdir = resolveChronicleDir();
+
+    assert.equal(fromRoot, fromSubdir, "切换工作区后 Chronicle 目录必须保持一致，否则记忆分裂");
+    assert.equal(path.resolve(fromRoot), path.join(root, "memory", "wiki", "chronicle"));
+  } finally {
+    process.chdir(savedCwd);
+    if (savedEnv === undefined) delete process.env.KLEIN_CHRONICLE_DIR;
+    else process.env.KLEIN_CHRONICLE_DIR = savedEnv;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resolveChronicleDir gives precedence to explicit config over env and cwd", () => {
+  const savedEnv = process.env.KLEIN_CHRONICLE_DIR;
+  try {
+    process.env.KLEIN_CHRONICLE_DIR = path.join(os.tmpdir(), "env-should-lose");
+    assert.equal(resolveChronicleDir("C:\\explicit\\chronicle"), "C:\\explicit\\chronicle");
+  } finally {
+    if (savedEnv === undefined) delete process.env.KLEIN_CHRONICLE_DIR;
+    else process.env.KLEIN_CHRONICLE_DIR = savedEnv;
+  }
+});
 
 test("formatDate and formatTime format date correctly", () => {
   const d = new Date(2026, 9, 26, 14, 5, 9); // Month is 0-indexed (9 = Oct)

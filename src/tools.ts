@@ -750,7 +750,7 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
       endSeq: end,
       blockId: compactionId,
       verifiedReadings: range.verifiedReadings,
-    })
+    }, { chronicleDir: env.chronicleDir })
   }
 
   const summaryLine = `Compressed ${applied.result.blocksCreated} block(s), ~${applied.result.tokensCompressed} tokens reclaimed.`

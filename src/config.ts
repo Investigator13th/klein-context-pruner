@@ -38,6 +38,14 @@ export interface KernelConfigInput {
   readonly nudgeHeadroomFloor?: number
   /** Cap for the headroom reserve. Kernel default: 250000 — kept above 1 - maxContextLimitPct × limit at every sane window so the soft trigger never lands after the hard line. */
   readonly nudgeHeadroomCap?: number
+  /**
+   * Chronicle 冷区日纪要的写入目录。留空时走 `resolveChronicleDir` 的上溯
+   * 回退（从 cwd 逐级找到最近的 `memory/`，再拼 `wiki/chronicle`）。
+   *
+   * 记忆真源跨工作区恒定，所以主工作区一旦迁移，必须在这里显式钉住绝对路径，
+   * 不依赖任何 cwd 推断。
+   */
+  readonly chronicleDir?: string
   /** Any other acp-kernel Config override (the billion-context-pi escape hatch). */
   readonly coreOverrides?: Partial<Config>
 }

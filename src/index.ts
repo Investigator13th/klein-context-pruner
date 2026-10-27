@@ -204,6 +204,14 @@ export interface AcpConfig {
   /** Cap for the headroom reserve, in absolute tokens. Kernel default 250000. */
   readonly nudgeHeadroomCap?: number
   /**
+   * Chronicle 冷区日纪要的写入目录（绝对路径）。
+   *
+   * 记忆真源跨会话、跨工作区恒定，所以这里一旦设定就不再依赖 cwd。留空时
+   * 由 `resolveChronicleDir` 从 cwd 逐级上溯找到最近的 `memory/` 再拼
+   * `wiki/chronicle` —— 上溯而非就地取用，保证切换主工作区后仍落同一处。
+   */
+  readonly chronicleDir?: string
+  /**
    * Any other acp-kernel Config override (billion-context-pi's `coreOverrides`
    * escape hatch). Merge order per section: kernel defaults → the engine pct
    * knobs above → these keys land LAST, so a same-name key here wins.
@@ -569,6 +577,8 @@ export class AcpCompactionEngine extends CompactionEngine {
       nudgeHeadroomFloor: this.config.nudgeHeadroomFloor,
       nudgeHeadroomCap: this.config.nudgeHeadroomCap,
       get preserveUserTurns() { return engine.config.preserveUserTurns ?? 3 },
+      // 记忆真源跨工作区恒定：显式钉住的绝对路径优先于 chronicle 的上溯回退。
+      chronicleDir: this.config.chronicleDir,
       coreOverrides: this.config.coreOverrides,
       // Display-only: which named preset produced the thresholds above (if any),
       // so /acp-prune status can name it. The resolved pct values above are what the
