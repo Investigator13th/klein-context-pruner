@@ -40,8 +40,6 @@
     "dsh": ">=0.1.5 <1.0.0-0"
   },
   "scripts": {
-    "prepare": "node scripts/patch-kernel.mjs",
-    "prebuild": "node scripts/patch-kernel.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsup",
     "test": "node --import tsx --test tests/*.test.ts"
@@ -56,15 +54,10 @@
     "@deepseek-ai/schemastery": "^3.18.2"
   },
   "devDependencies": {
-    "acp-kernel": "0.0.63",
+    "acp-kernel": "file:vendor/acp-kernel",
     "@types/node": "^22.13.0",
     "tsup": "^8.3.6",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
   }
 }

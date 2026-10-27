@@ -12,19 +12,19 @@ importers:
         specifier: ^4.0.1
         version: 4.0.5
       '@deepseek-ai/dsh-compaction':
-        specifier: '>=0.1.5-alpha.1 <0.1.6-0'
+        specifier: '>=0.1.5-alpha.1 <1.0.0-0'
         version: 0.1.5-rc.3(a4ba6a7591dfac1141a142981074ba8a)
       '@deepseek-ai/dsh-llm':
-        specifier: '>=0.1.5-alpha.1 <0.1.6-0'
+        specifier: '>=0.1.5-alpha.1 <1.0.0-0'
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)
       '@deepseek-ai/dsh-session':
-        specifier: '>=0.1.5-alpha.1 <0.1.6-0'
+        specifier: '>=0.1.5-alpha.1 <1.0.0-0'
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)))
       '@deepseek-ai/dsh-settings':
-        specifier: '>=0.1.5-alpha.1 <0.1.6-0'
+        specifier: '>=0.1.5-alpha.1 <1.0.0-0'
         version: 0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-brand@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-session@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-invariants@0.1.5-rc.3(@deepseek-ai/cordis@4.0.5))))(@deepseek-ai/schemastery@3.18.5)
       '@deepseek-ai/dsh-tools':
-        specifier: '>=0.1.5-alpha.1 <0.1.6-0'
+        specifier: '>=0.1.5-alpha.1 <1.0.0-0'
         version: 0.1.5-rc.3(54d884a9e99ddb53b1bcec748249840a)
       '@deepseek-ai/schemastery':
         specifier: ^3.18.2
@@ -34,8 +34,8 @@ importers:
         specifier: ^22.13.0
         version: 22.20.5
       acp-kernel:
-        specifier: 0.0.63
-        version: 0.0.63
+        specifier: file:vendor/acp-kernel
+        version: file:vendor/acp-kernel
       tsup:
         specifier: ^8.3.6
         version: 8.5.1(tsx@4.23.15)(typescript@5.9.3)
@@ -695,8 +695,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  acp-kernel@0.0.63:
-    resolution: {integrity: sha512-hM437yJ+iDeYzXMRZ6pIO37o+qS9i27GPO24xGDcEWKjFIb2GPJOQkqURI7rtdiouPnDX1bWojUjPyLghz0jDQ==}
+  acp-kernel@file:vendor/acp-kernel:
+    resolution: {directory: vendor/acp-kernel, type: directory}
     engines: {node: '>=20'}
 
   any-promise@1.3.0:
@@ -1330,7 +1330,7 @@ snapshots:
 
   acorn@8.19.0: {}
 
-  acp-kernel@0.0.63: {}
+  acp-kernel@file:vendor/acp-kernel: {}
 
   any-promise@1.3.0: {}
 
