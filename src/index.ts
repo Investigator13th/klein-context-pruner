@@ -61,6 +61,7 @@ import {
 import { allLogMessages, eventsToCoreMessages, overflowMarkerSummary, surfaceEventsOf } from './messages.ts'
 import { shadowedTokensViaMeter } from './host-tokens.ts'
 import { kernelConfigFor } from './config.ts'
+import { DEFAULT_HOUSEKEEPING_CONFIG, type HousekeepingConfig } from './housekeeping.ts'
 import {
   ACP_SETTINGS_NAMESPACE,
   AcpSettingsSchema,
@@ -145,6 +146,20 @@ export {
   type SettingsCommandSurface,
   type SettingsKey,
 } from './settings.ts'
+export {
+  DEFAULT_HOUSEKEEPING_CONFIG,
+  detectJumboToolResults,
+  renderJumboFilterNudge,
+  detectWrapUpSignal,
+  renderWrapUpNudge,
+  evaluateEmergencyHardStop,
+  type HousekeepingConfig,
+  type JumboCandidate,
+  type JumboFilterConfig,
+  type TurnWrapUpConfig,
+  type EmergencyHardStopConfig,
+  type WrapUpSignal,
+} from './housekeeping.ts'
 
 export interface AcpConfig {
   /**
@@ -253,6 +268,8 @@ export interface AcpConfig {
   readonly settingsEnabled?: boolean
   /** Number of recent real user turns to protect from compression. Default 3. */
   readonly preserveUserTurns?: number
+  /** ACP 2.0 智能修剪网络（靶向快刀 + 阶段收纳 + 安全气囊） */
+  readonly housekeeping?: HousekeepingConfig
   /** Per-stage prompt template overrides (nudge / range table / system prompt / tool descriptions). See docs/configurable-prompts-design.md. */
   readonly prompts?: AcpPrompts
 }
@@ -263,6 +280,7 @@ const DEFAULT_CONFIG: AcpConfig = {
   autoCommand: true,
   autoNudge: true,
   preserveUserTurns: 3,
+  housekeeping: DEFAULT_HOUSEKEEPING_CONFIG,
   // Same default as the host's compaction-basic policy: one owned retry per
   // unrelieved overflow, then the original error is preserved.
   maxOverflowRetries: 1,
@@ -577,6 +595,7 @@ export class AcpCompactionEngine extends CompactionEngine {
       nudgeHeadroomFloor: this.config.nudgeHeadroomFloor,
       nudgeHeadroomCap: this.config.nudgeHeadroomCap,
       get preserveUserTurns() { return engine.config.preserveUserTurns ?? 3 },
+      get housekeeping() { return engine.config.housekeeping },
       // 记忆真源跨工作区恒定：显式钉住的绝对路径优先于 chronicle 的上溯回退。
       chronicleDir: this.config.chronicleDir,
       coreOverrides: this.config.coreOverrides,

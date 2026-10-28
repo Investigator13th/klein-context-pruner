@@ -36,6 +36,14 @@ import { mediaPriceViaMeter } from './host-tokens.ts'
 import { sessionEventsOf } from './session-events.ts'
 import { kernelConfigFor, type KernelConfigInput } from './config.ts'
 import { DEFAULT_RESOLVED, renderTemplate, type ResolvedPrompts } from './prompts.ts'
+import {
+  DEFAULT_HOUSEKEEPING_CONFIG,
+  detectJumboToolResults,
+  renderJumboFilterNudge,
+  detectWrapUpSignal,
+  renderWrapUpNudge,
+  type LogRangeView,
+} from './housekeeping.ts'
 
 /**
  * B6 nudge 瘦身（2026-09-08 方案 §4 B6）：哲学段与压缩规则段**移出 nudge**——
@@ -110,8 +118,8 @@ export function resolveTokenCount(agent: Agent, coreMessages: CoreMessage[]): nu
  * the SAME turn — the map must be the one `processTurn` just returned, never a
  * rehydrated store state, or the refs point at ids this surface does not have.
  */
-function kernelRangeViewOf(nudge: NudgeDecision, state: CompressionState): KernelRangeView {
-  return { ranges: nudge.compressibleRanges ?? [], refs: state.messageRefs }
+function kernelRangeViewOf(nudge: NudgeDecision | undefined, state: CompressionState): KernelRangeView {
+  return { ranges: nudge?.compressibleRanges ?? [], refs: state.messageRefs }
 }
 
 /**
@@ -302,6 +310,51 @@ export function buildNudge(
   env.store.set(session, turn.state)
 
   const nudge = turn.nudge
+  const turnNumber = findOpenTurn(sessionEventsOf(session)) ?? 0
+
+  // ── ACP 2.0 三级联动：第一级 靶向快刀 (Jumbo Filter) ──
+  const jumboCandidates = detectJumboToolResults(session, env.housekeeping?.jumboFilter)
+  if (jumboCandidates.length > 0) {
+    const candidate = jumboCandidates[0]!
+    if (lastNudgeTurn.get(session.id) !== turnNumber || (nudge?.shouldInject)) {
+      lastNudgeTurn.set(session.id, turnNumber)
+      const text = renderJumboFilterNudge(candidate)
+      const message = createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'plugin:acp-nudge' },
+      })
+      return { message, emergency: false }
+    }
+  }
+
+  // ── ACP 2.0 三级联动：第二级 顺手收纳 (Turn Wrap-up Hook) ──
+  const wrapUpSignal = detectWrapUpSignal(session)
+  if (wrapUpSignal !== null) {
+    const kernelView = kernelRangeViewOf(nudge, turn.state)
+    const ranges = buildCompressibleSeqRanges(session, kernelView)
+    const totalCompressibleTokens = ranges.reduce((acc, r) => acc + r.tokens, 0)
+    const wrapUpThreshold = env.housekeeping?.turnWrapUp?.thresholdTokens ?? DEFAULT_HOUSEKEEPING_CONFIG.turnWrapUp.thresholdTokens!
+
+    if (totalCompressibleTokens >= wrapUpThreshold) {
+      if (lastNudgeTurn.get(session.id) !== turnNumber) {
+        lastNudgeTurn.set(session.id, turnNumber)
+        const logRanges: LogRangeView[] = ranges.map((r) => ({
+          start: r.start,
+          end: r.end,
+          description: r.toolPct >= 50 ? '探索日志' : '历史对话',
+          tokens: r.tokens,
+        }))
+        const text = renderWrapUpNudge(wrapUpSignal, totalCompressibleTokens, logRanges)
+        const message = createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'plugin:acp-nudge' },
+        })
+        return { message, emergency: false }
+      }
+    }
+  }
+
+  // ── ACP 2.0 三级联动：第三级 安全气囊与通用余量拦截 ──
   if (nudge === undefined || !nudge.shouldInject) return null
   // Media-bearing spans are invisible to every text estimator, so their price
   // comes from the host meter. Lazily: a media-free session never pays for a
@@ -322,7 +375,6 @@ export function buildNudge(
   nudge.contextBreakdown = computeSurfaceBreakdown(turn.state, statusMessages, tokenCount, nudge.contextBreakdown?.growth ?? 0)
   const emergency = nudge.breakdown?.emergencyOverride === 1
 
-  const turnNumber = findOpenTurn(sessionEventsOf(session)) ?? 0
   if (!emergency) {
     // Normal-pressure nudge: at most one per user turn (unchanged behavior).
     if (lastNudgeTurn.get(session.id) === turnNumber) return null

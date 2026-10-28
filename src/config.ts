@@ -15,6 +15,7 @@
  */
 
 import { defaultConfig, type Config } from 'acp-kernel'
+import { DEFAULT_HOUSEKEEPING_CONFIG, type HousekeepingConfig } from './housekeeping.ts'
 
 /** The kernel-facing knobs shared by the nudge path and the compress tool. */
 export interface KernelConfigInput {
@@ -46,6 +47,8 @@ export interface KernelConfigInput {
    * 不依赖任何 cwd 推断。
    */
   readonly chronicleDir?: string
+  /** ACP 2.0 智能修剪策略（靶向快刀 + 阶段收纳 + 安全气囊） */
+  readonly housekeeping?: HousekeepingConfig
   /** Any other acp-kernel Config override (the billion-context-pi escape hatch). */
   readonly coreOverrides?: Partial<Config>
 }
@@ -58,8 +61,13 @@ export interface KernelConfigInput {
 export function kernelConfigFor(input: KernelConfigInput): Config {
   const nudgePatch: Partial<Config['nudge']> = {}
   if (input.nudgeMinContextLimitPct !== undefined) nudgePatch.minContextLimitPct = input.nudgeMinContextLimitPct
-  if (input.nudgeMaxContextLimitPct !== undefined) nudgePatch.maxContextLimitPct = input.nudgeMaxContextLimitPct
-  if (input.nudgeEmergencyThresholdPct !== undefined) nudgePatch.emergencyThresholdPct = input.nudgeEmergencyThresholdPct
+
+  const maxPct = input.nudgeMaxContextLimitPct ?? input.housekeeping?.emergencyHardStop?.hardThresholdRatio
+  if (maxPct !== undefined) nudgePatch.maxContextLimitPct = maxPct
+
+  const emergencyPct = input.nudgeEmergencyThresholdPct ?? input.housekeeping?.emergencyHardStop?.emergencyThresholdRatio
+  if (emergencyPct !== undefined) nudgePatch.emergencyThresholdPct = emergencyPct
+
   if (input.nudgeHeadroomRatio !== undefined) nudgePatch.headroomRatio = input.nudgeHeadroomRatio
   if (input.nudgeHeadroomFloor !== undefined) nudgePatch.headroomFloor = input.nudgeHeadroomFloor
   if (input.nudgeHeadroomCap !== undefined) nudgePatch.headroomCap = input.nudgeHeadroomCap
