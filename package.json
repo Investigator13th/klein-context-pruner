@@ -1,6 +1,6 @@
 {
   "name": "klein-context-pruner",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "High-performance Active Context Pruning (ACP) for DeepSeek Harness — intelligent tiered compression, prefix cache affinity, and memory lifecycle management.",
   "keywords": [
     "deepseek",
@@ -13,6 +13,14 @@
     "prefix-cache",
     "compaction"
   ],
+  "homepage": "https://github.com/Investigator13th/klein-context-pruner#readme",
+  "bugs": {
+    "url": "https://github.com/Investigator13th/klein-context-pruner/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Investigator13th/klein-context-pruner.git"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -26,6 +34,7 @@
     "dist",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "sideEffects": false,
