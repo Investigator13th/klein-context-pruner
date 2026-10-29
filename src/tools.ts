@@ -586,6 +586,16 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
       rejectedNotes.push(protectedRowRejectionNote(resolved.start, resolved.end, instructionHits, shadowedSpan, session))
       continue
     }
+    // Reject overlapping or duplicate ranges within the same batch.
+    const overlapping = ranges.find((existing) => (
+      Math.max(resolved.start, existing.start) <= Math.min(resolved.end, existing.end)
+    ))
+    if (overlapping !== undefined) {
+      rejectedNotes.push(
+        `  Skipped range (${resolved.start}..${resolved.end}) — overlaps with earlier range in this batch (${overlapping.start}..${overlapping.end})`,
+      )
+      continue
+    }
     // An edge on an ACTIVE block's checkpoint summary node resolves to the
     // kernel block ref (bN) — the boundary that makes applyCompression distill
     // (tier 2/3) instead of folding the summary as a plain message.
@@ -691,7 +701,16 @@ async function handleCompress(env: ToolEnvironment, args: CompressArgs, exec: To
     }
     // The edges were already balanced above; shadow exactly that span.
     const { start, end } = range
+    const surfaceNodes = session.surface.nodes
+    if (!surfaceNodes.includes(start as SurfaceSeq) || !surfaceNodes.includes(end as SurfaceSeq)) {
+      lines.push(`  Skipped range (${start}..${end}) — boundaries no longer on current surface (subsumed by earlier range in batch)`)
+      continue
+    }
     const shadowed = shadowedSeqsOf(session, start, end)
+    if (shadowed.length === 0) {
+      lines.push(`  Skipped range (${start}..${end}) — no live surface messages remain in span`)
+      continue
+    }
     // Price the reclaimed tokens in the HOST's token vocabulary (rule 12):
     // prefer the live meter's per-node prices, fall back to the exact mirror.
     // NEVER defaultCountTokens — that overdraws the meter on CJK (issue #54).

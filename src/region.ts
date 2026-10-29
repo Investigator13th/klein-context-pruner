@@ -454,6 +454,19 @@ export function runCompactionTransaction(
   if (input.start > input.end) {
     throw new Error(`billion-context-dsh: reversed range ${input.start}..${input.end}`)
   }
+  if (!Array.isArray(input.shadowedSeqs) || input.shadowedSeqs.length === 0) {
+    throw new Error(`billion-context-dsh: empty shadowedSeqs for range ${input.start}..${input.end}`)
+  }
+  const surfaceNodes = session.surface.nodes
+  if (!surfaceNodes.includes(input.start as SurfaceSeq) || !surfaceNodes.includes(input.end as SurfaceSeq)) {
+    const failedEdge = !surfaceNodes.includes(input.start as SurfaceSeq) ? input.start : input.end
+    throw new Error(
+      `billion-context-dsh: seq ${input.start}..${input.end} not in current surface nodes — `
+      + `edge seq ${failedEdge} is not in current surface nodes. `
+      + 'Surface seqs are sparse message nodes (only user/message, assistant/message, '
+      + 'tool/result events); consult acp_status for the current surface range',
+    )
+  }
   if (eventAtOf(session, input.start) === undefined || eventAtOf(session, input.end) === undefined) {
     const failedEdge = eventAtOf(session, input.start) === undefined ? input.start : input.end
     throw new Error(
